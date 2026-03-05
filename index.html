@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SonarBeat — Active Sonar Respiration Monitor</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Bebas+Neue&display=swap');
+
+  :root {
+    --bg: #070a0f;
+    --surface: #0d1117;
+    --border: #1a2332;
+    --accent: #00e5ff;
+    --accent2: #00ff88;
+    --warn: #ff6b35;
+    --text: #c8d6e5;
+    --dim: #4a5568;
+    --glow: rgba(0, 229, 255, 0.15);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Animated grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 24px 20px;
+  }
+
+  /* Header */
+  header {
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+    margin-bottom: 32px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 20px;
+  }
+  .logo {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 3.2rem;
+    letter-spacing: 4px;
+    line-height: 1;
+    color: var(--accent);
+    text-shadow: 0 0 30px rgba(0,229,255,0.4);
+  }
+  .logo span { color: var(--accent2); }
+  .subtitle {
+    font-size: 0.65rem;
+    color: var(--dim);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  /* Status bar */
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    margin-bottom: 20px;
+    font-size: 0.72rem;
+  }
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--dim);
+    flex-shrink: 0;
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  .status-dot.active {
+    background: var(--accent2);
+    box-shadow: 0 0 8px var(--accent2);
+    animation: pulse 1.5s infinite;
+  }
+  .status-dot.scanning {
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+    animation: pulse 0.8s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  #statusText { color: var(--accent); letter-spacing: 1px; }
+
+  /* Main grid */
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 260px;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  /* Panels */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .panel-header {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.65rem;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--dim);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .panel-header::before {
+    content: '';
+    width: 3px; height: 12px;
+    background: var(--accent);
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  .panel-body { padding: 16px; }
+
+  /* Canvas */
+  canvas {
+    display: block;
+    width: 100%;
+    border-radius: 3px;
+  }
+  #waveCanvas { height: 120px; }
+  #iqCanvas { height: 160px; }
+  #breathCanvas { height: 140px; }
+
+  /* BPM Display */
+  .bpm-display {
+    text-align: center;
+    padding: 20px 16px;
+  }
+  .bpm-number {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 5.5rem;
+    line-height: 1;
+    color: var(--accent2);
+    text-shadow: 0 0 40px rgba(0,255,136,0.5);
+    letter-spacing: 2px;
+    transition: color 0.5s;
+  }
+  .bpm-number.alert { color: var(--warn); text-shadow: 0 0 40px rgba(255,107,53,0.5); }
+  .bpm-unit {
+    font-size: 0.7rem;
+    letter-spacing: 3px;
+    color: var(--dim);
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+  .bpm-label {
+    font-size: 0.65rem;
+    color: var(--dim);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-top: 12px;
+  }
+
+  /* Stats grid */
+  .stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    padding: 12px;
+  }
+  .stat {
+    background: rgba(0,229,255,0.03);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px;
+    text-align: center;
+  }
+  .stat-val {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.6rem;
+    color: var(--accent);
+    line-height: 1;
+  }
+  .stat-lbl {
+    font-size: 0.6rem;
+    letter-spacing: 2px;
+    color: var(--dim);
+    text-transform: uppercase;
+    margin-top: 3px;
+  }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    gap: 10px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .btn {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: var(--bg);
+    font-weight: 700;
+  }
+  .btn-primary:hover { background: #33ecff; box-shadow: 0 0 20px rgba(0,229,255,0.4); }
+  .btn-primary:disabled { background: var(--dim); cursor: not-allowed; box-shadow: none; }
+  .btn-danger {
+    background: transparent;
+    color: var(--warn);
+    border: 1px solid var(--warn);
+  }
+  .btn-danger:hover { background: rgba(255,107,53,0.1); }
+  .btn-danger:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Frequency selector */
+  .freq-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.65rem;
+    color: var(--dim);
+    letter-spacing: 1px;
+    margin-left: auto;
+  }
+  select {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.65rem;
+    background: var(--bg);
+    color: var(--accent);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 6px 10px;
+    outline: none;
+    cursor: pointer;
+  }
+  select:hover { border-color: var(--accent); }
+
+  /* Progress */
+  .progress-bar {
+    height: 2px;
+    background: var(--border);
+    margin: 0 16px 0;
+    border-radius: 1px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 1px;
+    transition: width 1s linear;
+    width: 0%;
+  }
+
+  /* Timer */
+  .timer-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px 12px;
+    font-size: 0.65rem;
+    color: var(--dim);
+    letter-spacing: 1px;
+  }
+  #timerText { color: var(--accent); font-size: 0.75rem; }
+  #phaseLabel {
+    margin-left: auto;
+    padding: 3px 8px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-size: 0.6rem;
+    letter-spacing: 2px;
+  }
+
+  /* Bottom row */
+  .bottom-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  /* Log */
+  .log {
+    font-size: 0.62rem;
+    letter-spacing: 1px;
+    color: var(--dim);
+    line-height: 1.8;
+    max-height: 100px;
+    overflow-y: auto;
+    padding: 12px;
+  }
+  .log::-webkit-scrollbar { width: 3px; }
+  .log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .log .info { color: var(--accent); }
+  .log .ok { color: var(--accent2); }
+  .log .warn { color: var(--warn); }
+
+  /* Info */
+  .info-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+    padding: 12px;
+  }
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.62rem;
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(26,35,50,0.6);
+  }
+  .info-row:last-child { border-bottom: none; }
+  .info-key { color: var(--dim); letter-spacing: 1px; }
+  .info-val { color: var(--accent); }
+
+  /* Breathing rate indicator */
+  .breath-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px;
+    font-size: 0.62rem;
+    color: var(--dim);
+    letter-spacing: 1px;
+  }
+  .range-normal { color: var(--accent2); }
+  .range-low, .range-high { color: var(--warn); }
+
+  /* Sonar ripple animation */
+  .sonar-anim {
+    position: relative;
+    width: 60px; height: 60px;
+    margin: 0 auto 16px;
+  }
+  .sonar-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 1.5px solid var(--accent);
+    opacity: 0;
+    animation: sonar-expand 2s ease-out infinite;
+  }
+  .sonar-ring:nth-child(2) { animation-delay: 0.6s; }
+  .sonar-ring:nth-child(3) { animation-delay: 1.2s; }
+  .sonar-core {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 10px var(--accent);
+  }
+  @keyframes sonar-expand {
+    0% { transform: scale(0.2); opacity: 0.8; }
+    100% { transform: scale(1.5); opacity: 0; }
+  }
+  .sonar-anim.inactive .sonar-ring { animation-play-state: paused; }
+  .sonar-anim.inactive .sonar-core { background: var(--dim); box-shadow: none; }
+
+  /* Responsive */
+  @media (max-width: 700px) {
+    .grid { grid-template-columns: 1fr; }
+    .bottom-grid { grid-template-columns: 1fr; }
+    .logo { font-size: 2.4rem; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <div class="logo">Sonar<span>Beat</span></div>
+    <div>
+      <div class="subtitle">Active Sonar Respiration Monitor</div>
+      <div style="font-size:0.6rem;color:var(--dim);letter-spacing:1px;">Based on Wang et al., ACM Trans. Computing for Healthcare 2021</div>
+    </div>
+  </header>
+
+  <div class="status-bar">
+    <div class="status-dot" id="statusDot"></div>
+    <span id="statusText">IDLE — PRESS START TO BEGIN</span>
+  </div>
+
+  <div class="grid">
+    <!-- Left column: charts -->
+    <div>
+      <div class="panel" style="margin-bottom:14px;">
+        <div class="panel-header">Received Acoustic Signal (Raw)</div>
+        <div class="panel-body" style="padding:12px;">
+          <canvas id="waveCanvas"></canvas>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:14px;">
+        <div class="panel-header">I/Q Baseband (After Static Removal)</div>
+        <div class="panel-body" style="padding:12px;">
+          <canvas id="iqCanvas"></canvas>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">Respiration Signal (Phase Unwrapped)</div>
+        <div class="panel-body" style="padding:12px;">
+          <canvas id="breathCanvas"></canvas>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+        <div class="timer-row">
+          <span>ELAPSED:</span>
+          <span id="timerText">00:00</span>
+          <span id="phaseLabel" style="color:var(--dim);">WAITING</span>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button class="btn btn-primary" id="btnStart">▶ START</button>
+        <button class="btn btn-danger" id="btnStop" disabled>■ STOP</button>
+        <div class="freq-group">
+          <span>CW FREQ:</span>
+          <select id="freqSelect">
+            <option value="18000">18 kHz</option>
+            <option value="19000">19 kHz</option>
+            <option value="20000" selected>20 kHz</option>
+            <option value="21000">21 kHz</option>
+            <option value="22000">22 kHz</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right column -->
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div class="panel">
+        <div class="panel-header">I/Q Plane</div>
+        <div class="panel-body" style="padding:12px;">
+          <canvas id="iqPlaneCanvas" style="width:100%;height:190px;"></canvas>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">Breathing Rate</div>
+        <div class="bpm-display">
+          <div class="sonar-anim inactive" id="sonarAnim">
+            <div class="sonar-ring"></div>
+            <div class="sonar-ring"></div>
+            <div class="sonar-ring"></div>
+            <div class="sonar-core"></div>
+          </div>
+          <div class="bpm-number" id="bpmDisplay">--</div>
+          <div class="bpm-unit">Breaths / Minute</div>
+          <div class="bpm-label" id="breathStatus">Awaiting data...</div>
+        </div>
+        <div class="breath-indicator">
+          <span>Normal:</span>
+          <span class="range-normal">12–20 bpm</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">System Parameters</div>
+        <div class="info-grid">
+          <div class="info-row"><span class="info-key">SAMPLE RATE</span><span class="info-val" id="infoSR">--</span></div>
+          <div class="info-row"><span class="info-key">DOWNSAMPLE</span><span class="info-val">÷100 → 480Hz</span></div>
+          <div class="info-row"><span class="info-key">LPF CUTOFF</span><span class="info-val">1 Hz</span></div>
+          <div class="info-row"><span class="info-key">MED WINDOW</span><span class="info-val">÷2 of N</span></div>
+          <div class="info-row"><span class="info-key">FFT WINDOW</span><span class="info-val" id="infoFFT">--</span></div>
+          <div class="info-row"><span class="info-key">FREQ RES</span><span class="info-val" id="infoRes">--</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom-grid">
+    <div class="panel">
+      <div class="panel-header">FFT Spectrum</div>
+      <div class="panel-body" style="padding:12px;">
+        <canvas id="fftCanvas" style="height:100px;"></canvas>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">System Log</div>
+      <div class="log" id="logDiv">
+        <div class="info">// SonarBeat Web v1.0</div>
+        <div>// Place smartphone 10-50cm from chest</div>
+        <div>// Keep still during measurement</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ================================================================
+// SonarBeat: Active Sonar Phase Respiration Monitor
+// Web Audio API implementation of Wang et al. ACM 2021
+// ================================================================
+
+const SAMPLE_RATE = 48000;
+const DOWNSAMPLE_RATIO = 100;
+const DS_RATE = SAMPLE_RATE / DOWNSAMPLE_RATIO; // 480 Hz
+const LPF_CUTOFF = 1.0;    // 1 Hz
+const BUFFER_SIZE = 1920;  // ~40ms at 48kHz
+const TOTAL_DURATION = 30; // seconds
+const PHASE1_END = 15;
+const PHASE2_END = 30;
+const MEDIAN_FILTER_WIN = 300; // for data calibration
+const FFT_BREATH_MIN = 0.1;    // Hz (~6 bpm)
+const FFT_BREATH_MAX = 0.7;    // Hz (~42 bpm)
+
+let audioCtx = null;
+let micStream = null;
+let oscillatorNode = null;
+let analyserNode = null;
+let scriptProcessor = null;
+let isRunning = false;
+let startTime = 0;
+
+// Buffers
+let rawBuffer = [];         // downsampled raw (for display)
+let iBuffer = [];           // I component (downsampled)
+let qBuffer = [];           // Q component (downsampled)
+let iFiltered = [];         // I after LPF
+let qFiltered = [];         // Q after LPF
+let phaseBuffer = [];       // extracted phase
+let phaseUnwrapped = [];    // unwrapped phase
+
+// IIR low-pass filter state (2nd order Butterworth-like)
+let iFiltState = { x1:0, x2:0, y1:0, y2:0 };
+let qFiltState = { x1:0, x2:0, y1:0, y2:0 };
+
+// Simple 1Hz LPF coefficients for 480Hz sample rate
+// Using bilinear transform approximation
+function makeLPFCoeffs(fc, fs) {
+  const wc = 2 * Math.PI * fc / fs;
+  const k = Math.tan(wc / 2);
+  const norm = 1 / (1 + Math.SQRT2 * k + k * k);
+  return {
+    b0: k * k * norm,
+    b1: 2 * k * k * norm,
+    b2: k * k * norm,
+    a1: 2 * (k * k - 1) * norm,
+    a2: (1 - Math.SQRT2 * k + k * k) * norm
+  };
+}
+const lpfCoeffs = makeLPFCoeffs(LPF_CUTOFF, DS_RATE);
+
+function applyLPF(x, state) {
+  const { b0, b1, b2, a1, a2 } = lpfCoeffs;
+  const y = b0*x + b1*state.x1 + b2*state.x2 - a1*state.y1 - a2*state.y2;
+  state.x2 = state.x1; state.x1 = x;
+  state.y2 = state.y1; state.y1 = y;
+  return y;
+}
+
+// Adaptive Median Filter (Algorithm 1 from paper)
+function adaptiveMedianFilter(signal, windowSize) {
+  const N = signal.length;
+  const output = new Float32Array(N);
+  const nw = Math.floor(N / windowSize);
+  for (let i = 0; i <= nw; i++) {
+    const start = i * windowSize;
+    const end = ((i + 1) * windowSize <= N) ? (i + 1) * windowSize : N;
+    if (start >= N) break;
+    const window = signal.slice(start, end);
+    const sorted = [...window].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    for (let j = start; j < end; j++) {
+      output[j] = signal[j] - median;
+    }
+  }
+  return output;
+}
+
+// Median filter for data calibration
+function medianFilter(signal, w) {
+  const N = signal.length;
+  const out = new Float32Array(N);
+  const half = Math.floor(w / 2);
+  for (let i = 0; i < N; i++) {
+    const lo = Math.max(0, i - half);
+    const hi = Math.min(N - 1, i + half);
+    const seg = [];
+    for (let j = lo; j <= hi; j++) seg.push(signal[j]);
+    seg.sort((a, b) => a - b);
+    out[i] = seg[Math.floor(seg.length / 2)];
+  }
+  return out;
+}
+
+// Phase unwrapping
+function unwrapPhase(phases) {
+  const out = new Float32Array(phases.length);
+  out[0] = phases[0];
+  for (let i = 1; i < phases.length; i++) {
+    let delta = phases[i] - phases[i - 1];
+    while (delta > Math.PI) delta -= 2 * Math.PI;
+    while (delta < -Math.PI) delta += 2 * Math.PI;
+    out[i] = out[i - 1] + delta;
+  }
+  return out;
+}
+
+// FFT (Cooley-Tukey)
+function fft(real, imag) {
+  const N = real.length;
+  if (N <= 1) return;
+  // Bit reversal
+  let j = 0;
+  for (let i = 1; i < N; i++) {
+    let bit = N >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) {
+      [real[i], real[j]] = [real[j], real[i]];
+      [imag[i], imag[j]] = [imag[j], imag[i]];
+    }
+  }
+  for (let len = 2; len <= N; len <<= 1) {
+    const ang = -2 * Math.PI / len;
+    const wre = Math.cos(ang), wim = Math.sin(ang);
+    for (let i = 0; i < N; i += len) {
+      let re = 1, im = 0;
+      for (let k = 0; k < len / 2; k++) {
+        const ur = real[i+k], ui = imag[i+k];
+        const vr = real[i+k+len/2]*re - imag[i+k+len/2]*im;
+        const vi = real[i+k+len/2]*im + imag[i+k+len/2]*re;
+        real[i+k] = ur+vr; imag[i+k] = ui+vi;
+        real[i+k+len/2] = ur-vr; imag[i+k+len/2] = ui-vi;
+        const nr = re*wre - im*wim;
+        im = re*wim + im*wre; re = nr;
+      }
+    }
+  }
+}
+
+function nextPow2(n) {
+  let p = 1;
+  while (p < n) p <<= 1;
+  return p;
+}
+
+function estimateBreathRate(signal, sampleRate) {
+  const N = nextPow2(signal.length);
+  const real = new Float32Array(N);
+  const imag = new Float32Array(N);
+  // Hanning window
+  for (let i = 0; i < signal.length; i++) {
+    const w = 0.5 * (1 - Math.cos(2 * Math.PI * i / (signal.length - 1)));
+    real[i] = signal[i] * w;
+  }
+  fft(real, imag);
+  const magnitudes = [];
+  for (let i = 0; i < N / 2; i++) {
+    const freq = i * sampleRate / N;
+    if (freq >= FFT_BREATH_MIN && freq <= FFT_BREATH_MAX) {
+      magnitudes.push({ freq, mag: Math.sqrt(real[i]**2 + imag[i]**2) });
+    }
+  }
+  if (magnitudes.length === 0) return null;
+  magnitudes.sort((a, b) => b.mag - a.mag);
+  return { bpm: magnitudes[0].freq * 60, allMags: magnitudes };
+}
+
+// ================================================================
+// UI helpers
+// ================================================================
+function log(msg, cls = '') {
+  const d = document.getElementById('logDiv');
+  const el = document.createElement('div');
+  if (cls) el.className = cls;
+  const ts = new Date().toLocaleTimeString('ja-JP', {hour12:false});
+  el.textContent = `[${ts}] ${msg}`;
+  d.appendChild(el);
+  d.scrollTop = d.scrollHeight;
+}
+
+function setStatus(text, state) {
+  document.getElementById('statusText').textContent = text;
+  const dot = document.getElementById('statusDot');
+  dot.className = 'status-dot' + (state ? ' ' + state : '');
+}
+
+function setPhaseLabel(text) {
+  const el = document.getElementById('phaseLabel');
+  el.textContent = text;
+  el.style.color = text === 'PHASE 1' ? 'var(--dim)' :
+                   text === 'PHASE 2' ? 'var(--accent)' :
+                   text === 'PHASE 3' ? 'var(--accent2)' : 'var(--dim)';
+}
+
+// ================================================================
+// Canvas drawing
+// ================================================================
+function initCanvas(id) {
+  const c = document.getElementById(id);
+  c.width = c.offsetWidth * devicePixelRatio || 600;
+  c.height = c.offsetHeight * devicePixelRatio || 120;
+  return c;
+}
+
+function drawSignal(canvas, data, color, label, showZero = true) {
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#0d1117';
+  ctx.fillRect(0, 0, W, H);
+  if (showZero) {
+    ctx.strokeStyle = 'rgba(26,35,50,0.8)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, H/2); ctx.lineTo(W, H/2); ctx.stroke();
+  }
+  if (!data || data.length < 2) return;
+  const n = data.length;
+  let mn = Infinity, mx = -Infinity;
+  for (const v of data) { if (v < mn) mn = v; if (v > mx) mx = v; }
+  const range = mx - mn || 1;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5 * devicePixelRatio;
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * W;
+    const y = H - ((data[i] - mn) / range) * H * 0.85 - H * 0.075;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  if (label) {
+    ctx.fillStyle = 'rgba(74,85,104,0.8)';
+    ctx.font = `${10 * devicePixelRatio}px Space Mono`;
+    ctx.fillText(label, 6 * devicePixelRatio, 14 * devicePixelRatio);
+  }
+}
+
+function drawIQPlane(canvas, iData, qData) {
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#0d1117';
+  ctx.fillRect(0, 0, W, H);
+  // Axes
+  ctx.strokeStyle = 'rgba(26,35,50,0.8)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(W/2, 0); ctx.lineTo(W/2, H); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, H/2); ctx.lineTo(W, H/2); ctx.stroke();
+  if (!iData || iData.length < 2) return;
+  const n = Math.min(iData.length, qData.length);
+  let mn = Infinity, mx = -Infinity;
+  for (let i = 0; i < n; i++) {
+    if (iData[i] < mn) mn = iData[i]; if (iData[i] > mx) mx = iData[i];
+    if (qData[i] < mn) mn = qData[i]; if (qData[i] > mx) mx = qData[i];
+  }
+  const scale = Math.max(Math.abs(mn), Math.abs(mx)) || 1;
+  // Trail
+  ctx.lineWidth = 1.5 * devicePixelRatio;
+  const start = Math.max(0, n - 300);
+  for (let i = start; i < n; i++) {
+    const t = (i - start) / (n - start);
+    const r = Math.floor(0 + 0 * t);
+    const g = Math.floor(150 + 105 * t);
+    const b = Math.floor(100 + 155 * t);
+    ctx.fillStyle = `rgba(${r},${g},${b},${0.3 + t * 0.7})`;
+    const x = W/2 + (iData[i] / scale) * (W * 0.42);
+    const y = H/2 - (qData[i] / scale) * (H * 0.42);
+    ctx.beginPath(); ctx.arc(x, y, 1.5 * devicePixelRatio, 0, Math.PI*2); ctx.fill();
+  }
+  // Current point
+  const ix = W/2 + (iData[n-1] / scale) * (W * 0.42);
+  const iy = H/2 - (qData[n-1] / scale) * (H * 0.42);
+  ctx.fillStyle = '#00e5ff';
+  ctx.shadowBlur = 8; ctx.shadowColor = '#00e5ff';
+  ctx.beginPath(); ctx.arc(ix, iy, 4 * devicePixelRatio, 0, Math.PI*2); ctx.fill();
+  ctx.shadowBlur = 0;
+}
+
+function drawFFT(canvas, data, peakFreq) {
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#0d1117';
+  ctx.fillRect(0, 0, W, H);
+  if (!data || data.length === 0) return;
+  const maxMag = Math.max(...data.map(d => d.mag)) || 1;
+  const minFreq = FFT_BREATH_MIN, maxFreq = FFT_BREATH_MAX;
+  ctx.fillStyle = 'rgba(0,229,255,0.5)';
+  for (const { freq, mag } of data) {
+    const x = ((freq - minFreq) / (maxFreq - minFreq)) * W;
+    const h = (mag / maxMag) * H * 0.85;
+    ctx.fillRect(x - 1, H - h, 2, h);
+  }
+  if (peakFreq !== null) {
+    const px = ((peakFreq/60 - minFreq) / (maxFreq - minFreq)) * W;
+    ctx.strokeStyle = 'var(--accent2)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, H); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'var(--accent2)';
+    ctx.font = `${9 * devicePixelRatio}px Space Mono`;
+    ctx.fillText(`${(peakFreq/60).toFixed(3)}Hz`, Math.min(px + 4, W - 50 * devicePixelRatio), 14 * devicePixelRatio);
+  }
+  // Freq labels
+  ctx.fillStyle = 'rgba(74,85,104,0.9)';
+  ctx.font = `${8 * devicePixelRatio}px Space Mono`;
+  for (let bpm = 10; bpm <= 40; bpm += 10) {
+    const f = bpm / 60;
+    if (f < minFreq || f > maxFreq) continue;
+    const x = ((f - minFreq) / (maxFreq - minFreq)) * W;
+    ctx.fillText(`${bpm}`, x - 6 * devicePixelRatio, H - 3 * devicePixelRatio);
+  }
+}
+
+// ================================================================
+// Main signal processing loop
+// ================================================================
+let sampleCounter = 0;
+let dsBuf = [];      // accumulate for downsampling
+let iRaw = [];       // I before filtering
+let qRaw = [];       // Q before filtering
+let currentFreq = 20000;
+let timerInterval = null;
+let lastFFTResult = null;
+let breathCount = 0;
+
+function processChunk(inputData) {
+  if (!isRunning) return;
+  const elapsed = (audioCtx.currentTime - startTime);
+  const f = currentFreq;
+  const fs = SAMPLE_RATE;
+
+  for (let n = 0; n < inputData.length; n++) {
+    const sample = inputData[n];
+    sampleCounter++;
+
+    // Downsample by ratio 100 - accumulate and take every 100th
+    dsBuf.push(sample);
+    if (dsBuf.length >= DOWNSAMPLE_RATIO) {
+      // Average over window (simple downsampling)
+      const t_ds = sampleCounter / fs;
+      const ds_n = Math.floor(sampleCounter / DOWNSAMPLE_RATIO);
+
+      // I/Q demodulation on downsampled sample
+      const dsVal = dsBuf.reduce((a, b) => a + b, 0) / dsBuf.length;
+      dsBuf = [];
+
+      // Reference signals at downsampled rate
+      const ds_t = ds_n / DS_RATE;
+      const cosRef = Math.cos(2 * Math.PI * f * ds_t);
+      const sinRef = -Math.sin(2 * Math.PI * f * ds_t);
+
+      const rawI = dsVal * cosRef;
+      const rawQ = dsVal * sinRef;
+
+      // Apply low-pass filter
+      const filtI = applyLPF(rawI, iFiltState);
+      const filtQ = applyLPF(rawQ, qFiltState);
+
+      iBuffer.push(filtI);
+      qBuffer.push(filtQ);
+
+      // Keep display buffer smaller
+      if (iBuffer.length > DS_RATE * TOTAL_DURATION * 1.2) {
+        iBuffer.shift(); qBuffer.shift();
+      }
+
+      rawBuffer.push(dsVal);
+      if (rawBuffer.length > 480) rawBuffer.shift();
+    }
+  }
+}
+
+// Update displays periodically
+let displayInterval = null;
+function updateDisplays() {
+  if (!isRunning && iBuffer.length === 0) return;
+  const elapsed = audioCtx ? (audioCtx.currentTime - startTime) : 0;
+
+  // Raw wave
+  const wc = initCanvas('waveCanvas');
+  drawSignal(wc, rawBuffer, '#00e5ff', 'RAW ACOUSTIC');
+
+  // Compute static-removed I/Q for display
+  const N = iBuffer.length;
+  if (N > 10) {
+    const winSize = Math.max(10, Math.floor(N / 2));
+    const iArr = Float32Array.from(iBuffer);
+    const qArr = Float32Array.from(qBuffer);
+    const iClean = adaptiveMedianFilter(iArr, winSize);
+    const qClean = adaptiveMedianFilter(qArr, winSize);
+
+    // I/Q waveforms
+    const iqc = initCanvas('iqCanvas');
+    const W = iqc.width, H = iqc.height;
+    const ctx = iqc.getContext('2d');
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#0d1117';
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = 'rgba(26,35,50,0.8)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, H/2); ctx.lineTo(W, H/2); ctx.stroke();
+
+    const disp = Math.min(N, 480);
+    const iSub = iClean.slice(-disp);
+    const qSub = qClean.slice(-disp);
+    let mn = Infinity, mx = -Infinity;
+    for (const v of iSub) { if (v<mn) mn=v; if (v>mx) mx=v; }
+    for (const v of qSub) { if (v<mn) mn=v; if (v>mx) mx=v; }
+    const rng = Math.max(Math.abs(mn), Math.abs(mx)) * 2 || 1;
+
+    // I (cyan)
+    ctx.strokeStyle = '#00e5ff'; ctx.lineWidth = 1.5 * devicePixelRatio;
+    ctx.beginPath();
+    for (let i = 0; i < disp; i++) {
+      const x = (i / (disp - 1)) * W;
+      const y = H/2 - (iSub[i] / rng) * H * 0.85;
+      i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+    // Q (green)
+    ctx.strokeStyle = '#00ff88';
+    ctx.beginPath();
+    for (let i = 0; i < disp; i++) {
+      const x = (i / (disp - 1)) * W;
+      const y = H/2 - (qSub[i] / rng) * H * 0.85;
+      i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(74,85,104,0.8)';
+    ctx.font = `${9 * devicePixelRatio}px Space Mono`;
+    ctx.fillStyle = '#00e5ff'; ctx.fillText('I', 6*devicePixelRatio, 14*devicePixelRatio);
+    ctx.fillStyle = '#00ff88'; ctx.fillText('Q', 22*devicePixelRatio, 14*devicePixelRatio);
+
+    // I/Q plane
+    const iqpc = initCanvas('iqPlaneCanvas');
+    drawIQPlane(iqpc, Array.from(iClean.slice(-200)), Array.from(qClean.slice(-200)));
+
+    // Phase extraction (only if enough data and in phase 2+)
+    if (N >= DS_RATE * 10) {
+      const phase = new Float32Array(N);
+      for (let i = 0; i < N; i++) {
+        phase[i] = Math.atan2(qClean[i], iClean[i]);
+      }
+      const phaseUW = unwrapPhase(phase);
+      // Median filter for calibration
+      const calWin = Math.min(MEDIAN_FILTER_WIN, Math.floor(N / 4));
+      const phaseSmooth = medianFilter(phaseUW, calWin);
+
+      // Breathing signal canvas
+      const bc = initCanvas('breathCanvas');
+      const dispN = Math.min(N, DS_RATE * 20);
+      drawSignal(bc, Array.from(phaseSmooth.slice(-dispN)), '#00ff88', 'PHASE (RESPIRATION)');
+
+      // FFT estimation after 15s
+      if (elapsed >= PHASE1_END) {
+        const fftResult = estimateBreathRate(phaseSmooth, DS_RATE);
+        if (fftResult) {
+          lastFFTResult = fftResult;
+          const bpm = fftResult.bpm;
+          const bpmEl = document.getElementById('bpmDisplay');
+          bpmEl.textContent = bpm.toFixed(1);
+          bpmEl.className = 'bpm-number' + (bpm < 8 || bpm > 25 ? ' alert' : '');
+
+          let status = '正常範囲';
+          if (bpm < 12) status = '呼吸が遅い (< 12 bpm)';
+          else if (bpm > 20) status = '呼吸が速い (> 20 bpm)';
+          document.getElementById('breathStatus').textContent = status;
+
+          // FFT canvas
+          const fc = initCanvas('fftCanvas');
+          drawFFT(fc, fftResult.allMags, bpm);
+
+          // Stats
+          document.getElementById('infoFFT').textContent = N + ' pts';
+          document.getElementById('infoRes').textContent = (DS_RATE / N * 60).toFixed(2) + ' bpm';
+        }
+      }
+    }
+  }
+
+  // Progress
+  const pct = Math.min(100, (elapsed / TOTAL_DURATION) * 100);
+  document.getElementById('progressFill').style.width = pct + '%';
+
+  // Timer
+  const sec = Math.floor(elapsed);
+  const m = String(Math.floor(sec/60)).padStart(2,'0');
+  const s = String(sec % 60).padStart(2,'0');
+  document.getElementById('timerText').textContent = `${m}:${s}`;
+
+  // Phase label
+  if (elapsed < PHASE1_END) setPhaseLabel('PHASE 1');
+  else if (elapsed < PHASE2_END) setPhaseLabel('PHASE 2');
+  else setPhaseLabel('PHASE 3');
+}
+
+// ================================================================
+// Start / Stop
+// ================================================================
+async function startMonitoring() {
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
+    setStatus('マイクアクセスを要求中...', '');
+    log('AudioContext initialized. Sample rate: ' + audioCtx.sampleRate + ' Hz', 'info');
+
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        sampleRate: SAMPLE_RATE
+      }
+    });
+    log('Microphone access granted', 'ok');
+    document.getElementById('infoSR').textContent = audioCtx.sampleRate + ' Hz';
+
+    // Generate CW tone
+    currentFreq = parseInt(document.getElementById('freqSelect').value);
+    oscillatorNode = audioCtx.createOscillator();
+    oscillatorNode.type = 'sine';
+    oscillatorNode.frequency.setValueAtTime(currentFreq, audioCtx.currentTime);
+    oscillatorNode.connect(audioCtx.destination);
+    oscillatorNode.start();
+    log(`CW signal started: ${currentFreq} Hz (inaudible)`, 'ok');
+
+    // Microphone input
+    const micSource = audioCtx.createMediaStreamSource(micStream);
+    scriptProcessor = audioCtx.createScriptProcessor(BUFFER_SIZE, 1, 1);
+    scriptProcessor.onaudioprocess = (e) => {
+      const inputData = e.inputBuffer.getChannelData(0);
+      processChunk(inputData);
+    };
+    micSource.connect(scriptProcessor);
+    scriptProcessor.connect(audioCtx.destination);
+
+    // Reset state
+    sampleCounter = 0; dsBuf = [];
+    iBuffer = []; qBuffer = [];
+    rawBuffer = [];
+    iFiltState = { x1:0, x2:0, y1:0, y2:0 };
+    qFiltState = { x1:0, x2:0, y1:0, y2:0 };
+    lastFFTResult = null;
+
+    isRunning = true;
+    startTime = audioCtx.currentTime;
+
+    document.getElementById('btnStart').disabled = true;
+    document.getElementById('btnStop').disabled = false;
+    document.getElementById('freqSelect').disabled = true;
+    document.getElementById('sonarAnim').classList.remove('inactive');
+    document.getElementById('bpmDisplay').textContent = '--';
+    document.getElementById('breathStatus').textContent = '計測中...';
+
+    setStatus(`送信中: ${currentFreq} Hz CW | 受信・解析中`, 'scanning');
+    log(`Monitoring started. Duration: ${TOTAL_DURATION}s`, 'info');
+    log('Phase 1 (0-15s): signal collection', '');
+    log('Phase 2 (15-30s): FFT estimation begins', '');
+
+    displayInterval = setInterval(updateDisplays, 200);
+
+    // Auto-stop at 30s
+    setTimeout(() => {
+      if (isRunning) {
+        log('30s reached. Final FFT result:', 'ok');
+        if (lastFFTResult) {
+          log(`Breathing rate: ${lastFFTResult.bpm.toFixed(2)} bpm`, 'ok');
+        }
+        setStatus('計測完了 — 結果を参照してください', 'active');
+        stopMonitoring(true);
+      }
+    }, TOTAL_DURATION * 1000);
+
+  } catch (err) {
+    log('Error: ' + err.message, 'warn');
+    setStatus('エラー: ' + err.message, '');
+    console.error(err);
+    stopMonitoring(false);
+  }
+}
+
+function stopMonitoring(keepResults = false) {
+  isRunning = false;
+  if (oscillatorNode) { try { oscillatorNode.stop(); } catch(e){} oscillatorNode = null; }
+  if (scriptProcessor) { scriptProcessor.disconnect(); scriptProcessor = null; }
+  if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+  if (displayInterval) { clearInterval(displayInterval); displayInterval = null; }
+
+  document.getElementById('btnStart').disabled = false;
+  document.getElementById('btnStop').disabled = true;
+  document.getElementById('freqSelect').disabled = false;
+  document.getElementById('sonarAnim').classList.add('inactive');
+
+  if (!keepResults) {
+    setStatus('停止しました', '');
+    document.getElementById('bpmDisplay').textContent = '--';
+    document.getElementById('breathStatus').textContent = '再度開始してください';
+    setPhaseLabel('WAITING');
+    iBuffer = []; qBuffer = []; rawBuffer = [];
+    log('Monitoring stopped.', 'warn');
+  }
+}
+
+document.getElementById('btnStart').addEventListener('click', startMonitoring);
+document.getElementById('btnStop').addEventListener('click', () => stopMonitoring(false));
+
+// Init canvases on load
+window.addEventListener('load', () => {
+  ['waveCanvas','iqCanvas','breathCanvas','iqPlaneCanvas','fftCanvas'].forEach(id => {
+    const c = document.getElementById(id);
+    c.width = c.offsetWidth * devicePixelRatio || 600;
+    c.height = c.offsetHeight * devicePixelRatio || 120;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#0d1117';
+    ctx.fillRect(0, 0, c.width, c.height);
+  });
+});
+
+window.addEventListener('resize', () => {
+  ['waveCanvas','iqCanvas','breathCanvas','iqPlaneCanvas','fftCanvas'].forEach(id => {
+    const c = document.getElementById(id);
+    c.width = c.offsetWidth * devicePixelRatio || 600;
+    c.height = c.offsetHeight * devicePixelRatio || 120;
+  });
+});
+</script>
+</body>
+</html>
