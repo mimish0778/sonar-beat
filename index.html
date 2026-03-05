@@ -665,7 +665,7 @@ canvas { display: block; width: 100%; border-radius: 4px; }
 const SAMPLE_RATE = 48000;
 const DS_RATIO = 100;
 const DS_RATE = SAMPLE_RATE / DS_RATIO; // 480 Hz
-const BUFFER_SIZE = 1920;
+const BUFFER_SIZE = 4096; // valid sizes: 256,512,1024,2048,4096,8192,16384
 const TOTAL_SECS = 30;
 const PHASE1_END = 15;
 
