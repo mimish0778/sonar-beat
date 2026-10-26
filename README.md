@@ -6,6 +6,8 @@
 
 **デモ:** https://mimish0778.github.io/sonar-beat/
 
+<img src="images/screenshot.png" alt="計測を始める前の画面" width="400">
+
 > [!IMPORTANT]
 > 実験・学習用のアプリで、安定した精度は得られていません。医療機器としての検証もしていません。健康状態の判断や、無呼吸の検知、乳幼児の見守りなどの用途には使わないでください。
 
@@ -91,3 +93,7 @@ python3 -m http.server 8000
 - HTML / CSS / JavaScript（ライブラリやフレームワークは不使用）
 - Web Audio API（`OscillatorNode`、`ScriptProcessorNode`）、MediaDevices API
 - フォント: [DM Mono](https://fonts.google.com/specimen/DM+Mono)、[Instrument Serif](https://fonts.google.com/specimen/Instrument+Serif)（Google Fonts）
+
+## ライセンス
+
+[MIT License](LICENSE)
