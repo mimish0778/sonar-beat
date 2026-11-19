@@ -682,8 +682,8 @@ const PHASE1_END = 15;
 let audioCtx=null, micStream=null, oscillatorNode=null;
 let scriptProcessor=null, isRunning=false, startTime=0;
 let currentFreq=20000;
-let sampleCounter=0, dsBuf=[];
-let iBuffer=[], qBuffer=[], rawBuf=[];
+let sampleCounter=0, accI=0, accQ=0, accN=0;
+let iBuffer=[], qBuffer=[];
 let iFiltState={x1:0,x2:0,y1:0,y2:0};
 let qFiltState={x1:0,x2:0,y1:0,y2:0};
 let rafId=null, lastBPM=null;
@@ -774,28 +774,26 @@ function estimateBPM(signal){
   return{bpm:mags[0].freq*60,allMags:mags};
 }
 
+// 受信信号に 48kHz のまま cos / -sin を掛けて I/Q に分け（ベースバンドへ下ろし）、
+// そのあとで 100 サンプルずつ平均して 480Hz に間引く。
+// 先に間引くと、平均で搬送波そのものが大きく減衰し、ほかの帯域の雑音も折り返して混ざるため。
 function processChunk(data){
   if(!isRunning)return;
-  const f=currentFreq;
+  const w=2*Math.PI*currentFreq/SAMPLE_RATE;
   for(let n=0;n<data.length;n++){
+    const ph=w*sampleCounter;
     sampleCounter++;
-    dsBuf.push(data[n]);
-    if(dsBuf.length>=DS_RATIO){
-      const ds_n=Math.floor(sampleCounter/DS_RATIO);
-      const dsVal=dsBuf.reduce((a,b)=>a+b,0)/dsBuf.length;
-      dsBuf=[];
-      const t=ds_n/DS_RATE;
-      const filtI=applyLPF(dsVal*Math.cos(2*Math.PI*f*t),iFiltState);
-      const filtQ=applyLPF(dsVal*(-Math.sin(2*Math.PI*f*t)),qFiltState);
-      iBuffer.push(filtI);qBuffer.push(filtQ);
-      rawBuf.push(dsVal);
+    accI+=data[n]*Math.cos(ph);
+    accQ+=-data[n]*Math.sin(ph);
+    if(++accN>=DS_RATIO){
+      iBuffer.push(applyLPF(accI/accN,iFiltState));
+      qBuffer.push(applyLPF(accQ/accN,qFiltState));
+      accI=0;accQ=0;accN=0;
       const MAX=DS_RATE*TOTAL_SECS*1.5;
       if(iBuffer.length>MAX){iBuffer.shift();qBuffer.shift();}
-      if(rawBuf.length>480)rawBuf.shift();
     }
   }
 }
-
 // ── Drawing ──────────────────────────────────────────────────
 const PR=window.devicePixelRatio||1;
 
@@ -983,7 +981,7 @@ async function startMon(){
     mic.connect(scriptProcessor);
     scriptProcessor.connect(audioCtx.destination);
 
-    sampleCounter=0;dsBuf=[];iBuffer=[];qBuffer=[];rawBuf=[];
+    sampleCounter=0;accI=0;accQ=0;accN=0;iBuffer=[];qBuffer=[];
     iFiltState={x1:0,x2:0,y1:0,y2:0};
     qFiltState={x1:0,x2:0,y1:0,y2:0};
     lastBPM=null;
